@@ -24,17 +24,19 @@ def put_bid(event, body):
                 'body': json.dumps('Bid ID is required')
             }
         record = bids_table.get_item(Key={'bid_id': bid_id}).get('Item')
-        requested_id = record['requested_item_id']
-        offered_id = record['offered_item_id']
+        requested_item_id = record['requested_item_id']
+        offered_item_id = record['offered_item_id']
 
+        #updating status to in items table
         items_table.update_item(
-            Key={'item_id': requested_id},
+            Key={'item_id': requested_item_id},
             UpdateExpression='SET #s = :new_status',
             ExpressionAttributeNames={'#s': 'status'},
             ExpressionAttributeValues={':new_status': 'exchanged'}
         )
+
         items_table.update_item(
-            Key={'item_id': offered_id},
+            Key={'item_id': offered_item_id},
             UpdateExpression='SET #s = :new_status',
             ExpressionAttributeNames={'#s': 'status'},
             ExpressionAttributeValues={':new_status': 'exchanged'}
@@ -47,15 +49,13 @@ def put_bid(event, body):
             ExpressionAttributeValues={':new_status': 'accepted'}
         )
 
-        bids = bids_table.scan(
-            FilterExpression='requested_item_id = :requested_item_id or offered_item_id = :offered_item_id',
-            ExpressionAttributeValues={
-                ':requested_item_id': requested_id,
-                ':offered_item_id': offered_id
-            }
-        ).get('Items')
-
-        for bid in bids:
+        #Rejecting bids with same requested_item_id / offered_item_id
+        response = bids_table.query(
+            IndexName='requested_item_id-index',
+            KeyConditionExpression='requested_item_id = :requested_item_id',
+            ExpressionAttributeValues={':requested_item_id': requested_item_id}
+        )
+        for bid in response['Items']:
             if bid['bid_id'] != bid_id:
                 bids_table.update_item(
                     Key={'bid_id': bid['bid_id']},
@@ -63,7 +63,20 @@ def put_bid(event, body):
                     ExpressionAttributeNames={'#s': 'status'},
                     ExpressionAttributeValues={':new_status': 'rejected'}
                 )
-
+        response = bids_table.query(
+            IndexName='offered_item_id-index',
+            KeyConditionExpression='offered_item_id = :offered_item_id',
+            ExpressionAttributeValues={':offered_item_id': offered_item_id}
+        )
+        for bid in response['Items']:
+            if bid['bid_id'] != bid_id:
+                bids_table.update_item(
+                    Key={'bid_id': bid['bid_id']},
+                    UpdateExpression='SET #s = :new_status',
+                    ExpressionAttributeNames={'#s': 'status'},
+                    ExpressionAttributeValues={':new_status': 'rejected'}
+                )
+        
         return {
             'statusCode': 200,
             'body': json.dumps('Bid placed successfully')
