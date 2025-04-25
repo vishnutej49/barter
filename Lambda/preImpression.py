@@ -13,7 +13,7 @@ def lambda_handler(event, context):
     category = query_params.get('category')
     pagination_token_str = query_params.get('pagination_token')
 
-    PAGE_SIZE = 1
+    PAGE_SIZE = 2
 
     if not user_id:
         return {
